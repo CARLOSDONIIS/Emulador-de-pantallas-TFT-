@@ -1,0 +1,297 @@
+import tkinter as tk
+from tkinter import scrolledtext, ttk, filedialog, messagebox
+import re
+import os
+
+# --- MOTOR DE COLORES ---
+TFT_COLORS = {
+    'TFT_BLACK': '#000000', 'TFT_NAVY': '#000080', 'TFT_DARKGREEN': '#008000',
+    'TFT_DARKCYAN': '#008080', 'TFT_MAROON': '#800000', 'TFT_PURPLE': '#800080',
+    'TFT_OLIVE': '#808000', 'TFT_LIGHTGREY': '#D3D3D3', 'TFT_DARKGREY': '#A9A9A9',
+    'TFT_BLUE': '#0000FF', 'TFT_GREEN': '#00FF00', 'TFT_CYAN': '#00FFFF',
+    'TFT_RED': '#FF0000', 'TFT_MAGENTA': '#FF00FF', 'TFT_YELLOW': '#FFFF00',
+    'TFT_WHITE': '#FFFFFF', 'TFT_ORANGE': '#FFA500', 'TFT_PINK': '#FFC0CB',
+    'TFT_GOLD': '#FFD700', 'TFT_SKYBLUE': '#87CEEB', 'TFT_BROWN': '#A52A2A',
+    'TFT_VIOLET': '#EE82EE'
+}
+
+def decode_color(val_str):
+    val_str = val_str.strip()
+    if val_str in TFT_COLORS: return TFT_COLORS[val_str]
+    if "color565" in val_str:
+        try:
+            rgb = re.findall(r'\d+', val_str)
+            r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except: return "#FFFFFF"
+    try:
+        if val_str.startswith('0x'): val = int(val_str, 16)
+        else: val = int(val_str)
+        r = ((val >> 11) & 0x1F) << 3
+        g = ((val >> 5) & 0x3F) << 2
+        b = (val & 0x1F) << 3
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except: return "#FFFFFF"
+
+class TftExtremeApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("TFT_eSPI SIMULATOR V8.5")
+        self.root.geometry("1300x850")
+        self.root.configure(bg="#121212")
+
+        self.zoom = 1.0 
+        self.base_width = 320
+        self.base_height = 240
+        self.rotation = 0 
+        
+        self.setup_ui()
+        self.init_demo_code()
+        
+    def setup_ui(self):
+        # --- BARRA SUPERIOR ---
+        top_bar = tk.Frame(self.root, bg="#1e1e1e", height=50)
+        top_bar.pack(side=tk.TOP, fill=tk.X)
+
+        btn_style = {"bg": "#333", "fg": "#fff", "relief": "flat", "padx": 10, "font": ("Segoe UI", 9), "activebackground": "#444"}
+        
+        tk.Button(top_bar, text="馃搨 ABRIR", command=self.open_file, **btn_style).pack(side=tk.LEFT, padx=5)
+        tk.Button(top_bar, text="馃捑 GUARDAR", command=self.save_file_as, **btn_style).pack(side=tk.LEFT, padx=5)
+        tk.Button(top_bar, text="鉂� AYUDA", command=self.toggle_help, bg="#444", fg="#f1c40f", relief="flat", padx=10).pack(side=tk.LEFT, padx=15)
+        
+        # Resoluci贸n del Panel F铆sico
+        tk.Label(top_bar, text="PANEL:", bg="#1e1e1e", fg="#888", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(10, 5))
+        self.entry_w = tk.Entry(top_bar, width=4, bg="#2d2d2d", fg="white", borderwidth=0, justify="center")
+        self.entry_w.insert(0, str(self.base_width))
+        self.entry_w.pack(side=tk.LEFT)
+        tk.Label(top_bar, text="x", bg="#1e1e1e", fg="#888").pack(side=tk.LEFT)
+        self.entry_h = tk.Entry(top_bar, width=4, bg="#2d2d2d", fg="white", borderwidth=0, justify="center")
+        self.entry_h.insert(0, str(self.base_height))
+        self.entry_h.pack(side=tk.LEFT)
+        tk.Button(top_bar, text="OK", command=self.update_resolution, bg="#007acc", fg="white", relief="flat", font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT, padx=5)
+
+        # Zoom Porcentual (100% = Real)
+        tk.Label(top_bar, text="ZOOM:", bg="#1e1e1e", fg="#888").pack(side=tk.LEFT, padx=(20, 5))
+        self.zoom_lbl = tk.Label(top_bar, text="100%", bg="#1e1e1e", fg="white", width=6)
+        self.zoom_lbl.pack(side=tk.LEFT)
+        self.zoom_slider = ttk.Scale(top_bar, from_=0.2, to=4.0, orient=tk.HORIZONTAL, length=120, command=self.update_zoom_ui)
+        self.zoom_slider.set(1.0)
+        self.zoom_slider.pack(side=tk.LEFT)
+
+        self.lbl_filename = tk.Label(top_bar, text="tft_design.ino", bg="#1e1e1e", fg="#569cd6", font=("Consolas", 9, "italic"))
+        self.lbl_filename.pack(side=tk.RIGHT, padx=20)
+
+        # --- 脕REA CENTRAL ---
+        self.main_split = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, bg="#121212", sashwidth=4)
+        self.main_split.pack(fill=tk.BOTH, expand=True)
+
+        # Editor
+        self.editor = tk.Text(self.main_split, bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 12), 
+                              insertbackground="white", undo=True, padx=10, pady=10, borderwidth=0)
+        self.main_split.add(self.editor)
+        self.editor.bind("<KeyRelease>", self.on_code_change)
+
+        # Pantalla Simulada
+        self.preview_container = tk.Frame(self.main_split, bg="#0a0a0a")
+        self.main_split.add(self.preview_container)
+        
+        self.canvas = tk.Canvas(self.preview_container, bg="black", highlightthickness=1, highlightbackground="#333")
+        self.canvas.place(relx=0.5, rely=0.5, anchor="center")
+
+    def toggle_help(self):
+        help_win = tk.Toplevel(self.root)
+        help_win.title("Ayuda: S铆mbolos y Comandos")
+        help_win.geometry("500x650")
+        help_win.configure(bg="#181818")
+        
+        txt = scrolledtext.ScrolledText(help_win, bg="#181818", fg="#ccc", font=("Segoe UI", 10), borderwidth=0, padx=15, pady=15)
+        txt.pack(fill=tk.BOTH, expand=True)
+        manual = """[ ROTACI脫N ]
+Escribe esto en el c贸digo para girar la pantalla:
+tft.setRotation(0); // Vertical 0掳
+tft.setRotation(1); // Horizontal 90掳
+tft.setRotation(2); // Vertical 180掳
+tft.setRotation(3); // Horizontal 270掳
+
+[ S脥MBOLOS ESPECIALES ]
+S铆mbolo de grado (掳):
+- Opci贸n A: tft.print((char)176);
+- Opci贸n B: tft.print("25掳C"); // Escribiendo el s铆mbolo directamente
+
+Otros:
+(char)176 -> 掳 (Grado)
+(char)163 -> 拢 (Libra)
+(char)165 -> 楼 (Yen)
+
+[ COMANDOS DE TEXTO ]
+tft.fillScreen(TFT_BLACK);
+tft.setTextColor(TFT_WHITE);
+tft.setTextSize(1-7);
+tft.setCursor(x, y);
+tft.print("Hola");
+tft.println("Mundo");
+
+[ DIBUJO ]
+tft.drawPixel(x, y, color);
+tft.drawLine(x1, y1, x2, y2, color);
+tft.drawRect(x, y, w, h, color);
+tft.fillRect(x, y, w, h, color);
+tft.drawCircle(x, y, r, color);
+tft.fillCircle(x, y, r, color);
+tft.drawRoundRect(x, y, w, h, radio, color);
+"""
+        txt.insert(tk.END, manual)
+        txt.config(state=tk.DISABLED)
+
+    def init_demo_code(self):
+        self.editor.insert("1.0", """// CONFIGURACI脫N DE PANTALLA
+tft.setRotation(1); // Cambia a 0, 1, 2 o 3 para rotar
+tft.fillScreen(TFT_BLACK);
+
+// EJEMPLO DE SENSORES
+tft.setTextColor(TFT_YELLOW);
+tft.setTextSize(2);
+tft.setCursor(20, 20);
+tft.print("SISTEMA ACTIVO");
+
+tft.setTextColor(TFT_WHITE);
+tft.setTextSize(4);
+tft.setCursor(20, 60);
+tft.print("24.5");
+tft.print((char)176); // Simbolo de grado
+tft.print("C");
+
+tft.drawRoundRect(10, 50, 160, 65, 8, TFT_BLUE);
+""")
+        self.update_highlight()
+        self.render()
+
+    def update_resolution(self):
+        try:
+            self.base_width = int(self.entry_w.get())
+            self.base_height = int(self.entry_h.get())
+            self.render()
+        except: pass
+
+    def update_zoom_ui(self, val):
+        self.zoom = float(val)
+        self.zoom_lbl.config(text=f"{int(self.zoom * 100)}%")
+        self.render()
+
+    def on_code_change(self, event):
+        self.update_highlight()
+        self.render()
+
+    def update_highlight(self):
+        tags = {'cmd': '#4ec9b0', 'str': '#ce9178', 'num': '#b5cea8', 'cmt': '#6a9955', 'obj': '#569cd6'}
+        for t, col in tags.items():
+            self.editor.tag_remove(t, "1.0", tk.END)
+            self.editor.tag_configure(t, foreground=col)
+        txt = self.editor.get("1.0", tk.END)
+        for m in re.finditer(r'tft\.', txt): self.editor.tag_add('obj', f"1.0+{m.start()}c", f"1.0+{m.end()}c")
+        for m in re.finditer(r'(?<=\.)[a-zA-Z0-9_]+(?=\()', txt): self.editor.tag_add('cmd', f"1.0+{m.start()}c", f"1.0+{m.end()}c")
+        for m in re.finditer(r'"[^"]*"|\(char\)\d+', txt): self.editor.tag_add('str', f"1.0+{m.start()}c", f"1.0+{m.end()}c")
+        for m in re.finditer(r'\b\d+\b|0x[0-9A-Fa-f]+|TFT_[A-Z_]+', txt): self.editor.tag_add('num', f"1.0+{m.start()}c", f"1.0+{m.end()}c")
+        for m in re.finditer(r'//.*', txt): self.editor.tag_add('cmt', f"1.0+{m.start()}c", f"1.0+{m.end()}c")
+
+    def render(self):
+        self.canvas.delete("all")
+        code = self.editor.get("1.0", tk.END)
+        
+        # Escaneo flexible de rotaci贸n: busca tft.setRotation(n)
+        rot_match = re.search(r'tft\s*\.\s*setRotation\s*\(\s*(\d)\s*\)', code)
+        self.rotation = int(rot_match.group(1)) if rot_match else 0
+        
+        # Intercambiar dimensiones si es horizontal (1 o 3)
+        is_landscape = self.rotation in [1, 3]
+        curr_w = self.base_height if is_landscape else self.base_width
+        curr_h = self.base_width if is_landscape else self.base_height
+        
+        # Ajustar tama帽o del Canvas seg煤n Zoom
+        zw, zh = int(curr_w * self.zoom), int(curr_h * self.zoom)
+        self.canvas.config(width=zw, height=zh)
+        self.canvas.create_rectangle(0, 0, zw, zh, fill="black", outline="")
+
+        pen = {'x': 0, 'y': 0, 'size': 1, 'color': '#FFFFFF'}
+        lines = code.split('\n')
+
+        for line in lines:
+            l = line.strip().replace('(char)176', '掳')
+            if not l.startswith("tft.") or "setRotation" in l: continue
+            try:
+                # Extraer comando y argumentos
+                match = re.search(r'tft\.(.*?)\((.*)\)', l)
+                if not match: continue
+                cmd, args_raw = match.group(1), match.group(2)
+                
+                # Manejo de cadenas de texto y s铆mbolos
+                args = []
+                if '"' in args_raw:
+                    m_str = re.search(r'"(.*?)"', args_raw)
+                    if m_str:
+                        args.append(f'"{m_str.group(1)}"')
+                        args_raw = args_raw.replace(f'"{m_str.group(1)}"', 'TMP_STR')
+                elif '掳' in args_raw:
+                    args.append('"掳"')
+                    args_raw = args_raw.replace('掳', 'TMP_STR')
+
+                # Separar el resto de argumentos
+                other_args = [x.strip() for x in args_raw.split(',') if x.strip() and x != 'TMP_STR']
+                args.extend(other_args)
+
+                if cmd == "fillScreen":
+                    self.canvas.create_rectangle(0, 0, zw, zh, fill=decode_color(args[0]), outline="")
+                elif cmd == "setCursor":
+                    pen['x'], pen['y'] = int(args[0]), int(args[1])
+                elif cmd == "setTextSize":
+                    pen['size'] = int(args[0])
+                elif cmd == "setTextColor":
+                    pen['color'] = decode_color(args[0])
+                elif cmd in ["print", "println"]:
+                    txt = args[0].replace('"', '')
+                    f_size = int(pen['size'] * 8 * self.zoom) 
+                    self.canvas.create_text(pen['x']*self.zoom, pen['y']*self.zoom, text=txt, fill=pen['color'],
+                                            font=("Courier New", f_size, "bold"), anchor="nw")
+                    if cmd == "println": pen['y'] += int(pen['size'] * 10) 
+                    else: pen['x'] += len(txt) * int(pen['size'] * 6)
+                elif "Rect" in cmd:
+                    # x, y, w, h, [r], col
+                    x, y, w, h = [int(a)*self.zoom for a in args[:4]]
+                    col = decode_color(args[5] if "RoundRect" in cmd else args[4])
+                    if "fill" in cmd: self.canvas.create_rectangle(x, y, x+w, y+h, fill=col, outline="")
+                    else: self.canvas.create_rectangle(x, y, x+w, y+h, outline=col)
+                elif "Circle" in cmd:
+                    x, y, r = [int(a)*self.zoom for a in args[:3]]
+                    col = decode_color(args[3])
+                    if "fill" in cmd: self.canvas.create_oval(x-r, y-r, x+r, y+r, fill=col, outline="")
+                    else: self.canvas.create_oval(x-r, y-r, x+r, y+r, outline=col)
+                elif cmd == "drawLine":
+                    self.canvas.create_line(int(args[0])*self.zoom, int(args[1])*self.zoom, 
+                                            int(args[2])*self.zoom, int(args[3])*self.zoom, fill=decode_color(args[4]))
+            except: pass
+
+    def open_file(self):
+        path = filedialog.askopenfilename(filetypes=[("Arduino", "*.ino *.cpp *.h"), ("Todos", "*.*")])
+        if path:
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    self.editor.delete("1.0", tk.END)
+                    self.editor.insert("1.0", f.read())
+                self.lbl_filename.config(text=os.path.basename(path))
+                self.update_highlight()
+                self.render()
+            except: pass
+
+    def save_file_as(self):
+        path = filedialog.asksaveasfilename(defaultextension=".ino", filetypes=[("Arduino", "*.ino")])
+        if path:
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(self.editor.get("1.0", tk.END))
+                self.lbl_filename.config(text=os.path.basename(path))
+            except: pass
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TftExtremeApp(root)
+    root.mainloop()
