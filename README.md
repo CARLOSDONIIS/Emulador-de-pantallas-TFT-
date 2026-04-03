@@ -1,7 +1,5 @@
-# Emulador-de-pantallas-TFT-
-Usa comandos de la librería TFT_eSPI de Arduino (funciona en esp32) 
-
-
+<img width="1919" height="1029" alt="Captura de pantalla 2026-04-02 212158" src="https://github.com/user-attachments/assets/42dbc0c4-6e8a-40b6-b217-accef2aebc92" />
+<img width="1919" height="1026" alt="Captura de pantalla 2026-04-02 212343" src="https://github.com/user-attachments/assets/8bfb39cf-15ad-4741-ac2e-6e3056bee5b1" />
 TFT_eSPI Simulator es una herramienta de escritorio gratuita para programadores de Arduino y ESP32 que permite visualizar en tiempo real cómo lucirá su código en una pantalla TFT física, sin necesidad de cargar el programa al microcontrolador ni tener el hardware conectado.
 
 Diseñado específicamente para trabajar con la popular librería TFT_eSPI de Bodmer, el simulador interpreta directamente los comandos de dibujo y texto del código fuente, mostrando una previsualización interactiva y precisa del display.
@@ -35,9 +33,5 @@ Funciones principales:
 — Ventana de referencia rápida con la lista completa de comandos soportados, formatos de color y símbolos especiales, accesible desde la barra de herramientas.
 
 Requisitos del sistema: Sistema operativo: Windows 7 / 8 / 10 / 11
-<img width="1919" height="1029" alt="Captura de pantalla 2026-04-02 212158" src="https://github.com/user-attachments/assets/42dbc0c4-6e8a-40b6-b217-accef2aebc92" />
-<img width="1919" height="1026" alt="Captura de pantalla 2026-04-02 212343" src="https://github.com/user-attachments/assets/8bfb39cf-15ad-4741-ac2e-6e3056bee5b1" />
 
-
-
-Licencia: Freeware / Código abierto
+Licencia: Freeware / Código abierto edita esto para poner todo
